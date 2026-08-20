@@ -20,3 +20,17 @@ func TestHealthCheck(t *testing.T) {
 		t.Fatalf("GET /healthz = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
+
+// Ticket #21 AC3: the built frontend is embedded in the binary and served
+// from "/" — no separate frontend server/process.
+func TestServesEmbeddedFrontend(t *testing.T) {
+	e := server.New()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
