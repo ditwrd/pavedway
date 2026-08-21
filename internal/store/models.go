@@ -3,3 +3,38 @@
 //   sqlc v1.31.1
 
 package store
+
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type Entity struct {
+	ID        int64              `json:"id"`
+	OrgID     int64              `json:"org_id"`
+	Kind      string             `json:"kind"`
+	Namespace string             `json:"namespace"`
+	Name      string             `json:"name"`
+	Metadata  []byte             `json:"metadata"`
+	Spec      []byte             `json:"spec"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Organization struct {
+	ID        int64              `json:"id"`
+	Name      string             `json:"name"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type Relation struct {
+	ID              int64              `json:"id"`
+	OrgID           int64              `json:"org_id"`
+	SourceKind      string             `json:"source_kind"`
+	SourceNamespace string             `json:"source_namespace"`
+	SourceName      string             `json:"source_name"`
+	RelationType    string             `json:"relation_type"`
+	TargetKind      string             `json:"target_kind"`
+	TargetNamespace string             `json:"target_namespace"`
+	TargetName      string             `json:"target_name"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}

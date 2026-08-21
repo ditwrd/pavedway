@@ -1,18 +1,21 @@
-package db_test
+package store_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/ditwrd/pavedway/internal/db"
+	"github.com/ditwrd/pavedway/internal/store"
 )
 
-// Ticket #21 (walking skeleton): on a fresh Postgres database, migrations
-// must run automatically with no manual step.
-func TestRunMigrations_FreshDatabase(t *testing.T) {
+// newTestQueries spins up a fresh Postgres, runs migrations, and returns a
+// store backed by it. Mirrors the container setup in internal/db/migrate_test.go.
+func newTestQueries(t *testing.T) *store.Queries {
+	t.Helper()
 	ctx := context.Background()
 
 	container, err := tcpostgres.Run(ctx, "postgres:16-alpine",
@@ -39,23 +42,37 @@ func TestRunMigrations_FreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open pool: %v", err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 
 	if err := db.RunMigrations(pool); err != nil {
 		t.Fatalf("RunMigrations() error = %v, want nil", err)
 	}
 
-	var versionID int64
-	var isApplied bool
-	err = pool.QueryRow(ctx, "SELECT version_id, is_applied FROM goose_db_version ORDER BY id DESC LIMIT 1").Scan(&versionID, &isApplied)
+	return store.New(pool)
+}
+
+// bootstrap creates the single v0.1 Organization via the wizard path.
+func bootstrap(t *testing.T, q *store.Queries, name string) store.Organization {
+	t.Helper()
+	org, err := q.BootstrapOrganization(context.Background(), name)
 	if err != nil {
-		t.Fatalf("query goose_db_version: %v (migrations did not run)", err)
+		t.Fatalf("BootstrapOrganization(%q) error = %v, want nil", name, err)
 	}
-	if !isApplied {
-		t.Fatalf("goose_db_version.is_applied = false, want true")
+	return org
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
 	}
-	// #21's placeholder is 00001; #22 adds the real schema on top of it.
-	if versionID < 2 {
-		t.Fatalf("goose_db_version.version_id = %d, want >= 2", versionID)
+	return b
+}
+
+func mustUnmarshal(t *testing.T, b []byte, v any) {
+	t.Helper()
+	if err := json.Unmarshal(b, v); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
 	}
 }
