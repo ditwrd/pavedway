@@ -1,0 +1,22 @@
+# Canonical Backstage example (artist-web) plus one annotation pavedway does
+# not understand (example.com/custom-tag), exercising ticket #22 AC3/AC4.
+# Loaded unmodified; do not edit the semantics of this file.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: artist-web
+  description: The artist web
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: example/artist-web
+    example.com/custom-tag: keep-me
+spec:
+  type: website
+  lifecycle: production
+  owner: team-a
+  system: artist-engagement
+  dependsOn:
+    - resource:default/artist-db
+    - api:default/artist-api
+  providesApis:
+    - api:default/artist-api

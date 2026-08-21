@@ -10,7 +10,7 @@ import (
 
 // Ticket #21 (walking skeleton): the server must answer a health check.
 func TestHealthCheck(t *testing.T) {
-	e := server.New()
+	e := server.New(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -24,7 +24,7 @@ func TestHealthCheck(t *testing.T) {
 // Ticket #21 AC3: the built frontend is embedded in the binary and served
 // from "/" — no separate frontend server/process.
 func TestServesEmbeddedFrontend(t *testing.T) {
-	e := server.New()
+	e := server.New(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()

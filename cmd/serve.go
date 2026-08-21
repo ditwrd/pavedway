@@ -29,6 +29,7 @@ import (
 	"github.com/ditwrd/pavedway/internal/config"
 	"github.com/ditwrd/pavedway/internal/db"
 	"github.com/ditwrd/pavedway/internal/server"
+	"github.com/ditwrd/pavedway/internal/store"
 )
 
 // serveCmd boots the pavedway HTTP server: connects to Postgres, runs
@@ -107,7 +108,7 @@ func runOnce(ctx context.Context, cfg config.Config, restart <-chan config.Confi
 	}()
 
 	sc := echo.StartConfig{Address: ":" + cfg.Port}
-	if err := sc.Start(runCtx, server.New()); err != nil {
+	if err := sc.Start(runCtx, server.New(store.New(pool))); err != nil {
 		return nil, err
 	}
 

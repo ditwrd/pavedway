@@ -9,7 +9,17 @@ import (
 )
 
 type Querier interface {
-	Ping(ctx context.Context) (int32, error)
+	CountOrganizations(ctx context.Context) (int64, error)
+	CreateEntity(ctx context.Context, arg CreateEntityParams) (Entity, error)
+	CreateOrganization(ctx context.Context, name string) (Organization, error)
+	CreateRelation(ctx context.Context, arg CreateRelationParams) (Relation, error)
+	DeleteEntity(ctx context.Context, arg DeleteEntityParams) (int64, error)
+	GetEntity(ctx context.Context, arg GetEntityParams) (Entity, error)
+	GetOrganization(ctx context.Context) (Organization, error)
+	ListEntitiesByKind(ctx context.Context, arg ListEntitiesByKindParams) ([]Entity, error)
+	ListRelationsBySource(ctx context.Context, arg ListRelationsBySourceParams) ([]Relation, error)
+	ListRelationsByTarget(ctx context.Context, arg ListRelationsByTargetParams) ([]ListRelationsByTargetRow, error)
+	UpdateEntity(ctx context.Context, arg UpdateEntityParams) (Entity, error)
 }
 
 var _ Querier = (*Queries)(nil)
