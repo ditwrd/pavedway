@@ -5,14 +5,17 @@ on:
     branches: ["main"]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.27.0"
+          go-version-file: go.mod
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -22,5 +25,36 @@ jobs:
       - name: Build frontend (embeds into Go binary)
         run: bun run build
         working-directory: frontend
-      - name: Test
-        run: go test ./...
+      - name: Check go.mod is tidy
+        run: go mod tidy && git diff --exit-code -- go.mod go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Test (race, shuffled, uncached)
+        run: go test -race -shuffle=on -count=1 ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - name: Install frontend deps
+        run: bun install --frozen-lockfile
+        working-directory: frontend
+      - name: Build frontend (embeds into Go binary)
+        run: bun run build
+        working-directory: frontend
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          # Pin to the version installed locally (v2.13.1) so CI and local
+          # lint agree; 'latest' drifts and flags code local never sees.
+          version: v2.13.1
+          # The repo config gates on new-from-rev: HEAD for local dev; in CI
+          # the gate is issues introduced by this PR vs its base branch.
+          args: --new-from-rev=origin/main

@@ -11,16 +11,25 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
+	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/ditwrd/pavedway/internal/config"
 	"github.com/ditwrd/pavedway/internal/db"
 	"github.com/ditwrd/pavedway/internal/server"
 	"github.com/ditwrd/pavedway/internal/store"
 )
 
 // newTestServer spins up a fresh Postgres, runs migrations, and returns an
-// HTTP server backed by it.
+// HTTP server backed by it with auth disabled.
 func newTestServer(t *testing.T) *echo.Echo {
+	t.Helper()
+	return newTestServerCfg(t, config.Config{})
+}
+
+// newTestServerCfg is newTestServer with an explicit server config — auth
+// tests point cfg.OIDC at a fake IdP to exercise the full handshake.
+func newTestServerCfg(t *testing.T, cfg config.Config) *echo.Echo {
 	t.Helper()
 	ctx := context.Background()
 
@@ -30,9 +39,7 @@ func newTestServer(t *testing.T) *echo.Echo {
 		tcpostgres.WithPassword("pavedway"),
 		tcpostgres.BasicWaitStrategies(),
 	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
+	require.NoError(t, err, "start postgres container")
 	t.Cleanup(func() {
 		if err := container.Terminate(ctx); err != nil {
 			t.Logf("terminate container: %v", err)
@@ -40,30 +47,35 @@ func newTestServer(t *testing.T) *echo.Echo {
 	})
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
+	require.NoError(t, err, "connection string")
 
 	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
+	require.NoError(t, err, "open pool")
 	t.Cleanup(pool.Close)
 
-	if err := db.RunMigrations(pool); err != nil {
-		t.Fatalf("RunMigrations() error = %v, want nil", err)
-	}
+	require.NoError(t, db.RunMigrations(pool), "RunMigrations()")
 
-	return server.New(store.New(pool))
+	e, err := server.New(store.New(pool), cfg)
+	require.NoError(t, err, "server.New()")
+
+	return e
 }
 
 func doRequest(t *testing.T, e *echo.Echo, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return doRequestWithCookies(t, e, method, path, body)
+}
+
+func doRequestWithCookies(t *testing.T, e *echo.Echo, method, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 	var r io.Reader
 	if body != "" {
 		r = bytes.NewBufferString(body)
 	}
 	req := httptest.NewRequest(method, path, r)
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -74,9 +86,7 @@ func doRequest(t *testing.T, e *echo.Echo, method, path, body string) *httptest.
 
 func wantStatus(t *testing.T, rec *httptest.ResponseRecorder, method, path string, want int) {
 	t.Helper()
-	if rec.Code != want {
-		t.Fatalf("%s %s = %d, want %d\nbody: %s", method, path, rec.Code, want, rec.Body.String())
-	}
+	require.Equal(t, want, rec.Code, "%s %s (body: %s)", method, path, rec.Body.String())
 }
 
 // Ticket #22 AC1 (REST form): the first-run wizard creates exactly one
@@ -90,12 +100,8 @@ func TestBootstrap_FirstRunCreatesOrg_SecondRefused(t *testing.T) {
 	var org struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &org); err != nil {
-		t.Fatalf("decode bootstrap response: %v", err)
-	}
-	if org.Name != "Acme Corp" {
-		t.Fatalf("bootstrap response name = %q, want %q", org.Name, "Acme Corp")
-	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &org), "decode bootstrap response")
+	require.Equal(t, "Acme Corp", org.Name, "bootstrap response name")
 
 	rec = doRequest(t, e, http.MethodPost, "/api/v1/bootstrap", `{"name":"Globex"}`)
 	wantStatus(t, rec, http.MethodPost, "/api/v1/bootstrap", http.StatusConflict)
@@ -120,21 +126,14 @@ func TestEntities_CRUD_ThroughREST(t *testing.T) {
 		Name     string          `json:"name"`
 		Metadata json.RawMessage `json:"metadata"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode entity response: %v", err)
-	}
-	if got.Kind != "Component" || got.Name != "svc" {
-		t.Fatalf("GET entity = %s %q, want Component %q", got.Kind, got.Name, "svc")
-	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got), "decode entity response")
+	require.Equal(t, "Component", got.Kind, "GET entity")
+	require.Equal(t, "svc", got.Name, "GET entity")
 	var meta struct {
 		Annotations map[string]string `json:"annotations"`
 	}
-	if err := json.Unmarshal(got.Metadata, &meta); err != nil {
-		t.Fatalf("decode entity metadata: %v", err)
-	}
-	if meta.Annotations["example.com/x"] != "y" {
-		t.Fatalf("annotation after create = %q, want %q", meta.Annotations["example.com/x"], "y")
-	}
+	require.NoError(t, json.Unmarshal(got.Metadata, &meta), "decode entity metadata")
+	require.Equal(t, "y", meta.Annotations["example.com/x"], "annotation after create")
 
 	// Update
 	update := `{"metadata":{"annotations":{"example.com/x":"z"}},"spec":{"type":"service"}}`

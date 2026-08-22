@@ -1,3 +1,4 @@
+// Package frontend embeds the built web UI and exposes it as an fs.FS.
 package frontend
 
 import (

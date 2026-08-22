@@ -1,3 +1,5 @@
+// Package store is the data access layer over the pavedway Postgres
+// schema: sqlc-generated queries plus hand-written bootstrap and helpers.
 package store
 
 import (

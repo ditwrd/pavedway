@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/ditwrd/pavedway/internal/db"
@@ -21,9 +22,7 @@ func TestRunMigrations_FreshDatabase(t *testing.T) {
 		tcpostgres.WithPassword("pavedway"),
 		tcpostgres.BasicWaitStrategies(),
 	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
+	require.NoError(t, err, "start postgres container")
 	t.Cleanup(func() {
 		if err := container.Terminate(ctx); err != nil {
 			t.Logf("terminate container: %v", err)
@@ -31,31 +30,19 @@ func TestRunMigrations_FreshDatabase(t *testing.T) {
 	})
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
+	require.NoError(t, err, "connection string")
 
 	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
+	require.NoError(t, err, "open pool")
 	defer pool.Close()
 
-	if err := db.RunMigrations(pool); err != nil {
-		t.Fatalf("RunMigrations() error = %v, want nil", err)
-	}
+	require.NoError(t, db.RunMigrations(pool), "RunMigrations()")
 
 	var versionID int64
 	var isApplied bool
 	err = pool.QueryRow(ctx, "SELECT version_id, is_applied FROM goose_db_version ORDER BY id DESC LIMIT 1").Scan(&versionID, &isApplied)
-	if err != nil {
-		t.Fatalf("query goose_db_version: %v (migrations did not run)", err)
-	}
-	if !isApplied {
-		t.Fatalf("goose_db_version.is_applied = false, want true")
-	}
+	require.NoError(t, err, "query goose_db_version (migrations did not run)")
+	require.True(t, isApplied, "goose_db_version.is_applied")
 	// #21's placeholder is 00001; #22 adds the real schema on top of it.
-	if versionID < 2 {
-		t.Fatalf("goose_db_version.version_id = %d, want >= 2", versionID)
-	}
+	require.GreaterOrEqual(t, versionID, int64(2), "goose_db_version.version_id")
 }
