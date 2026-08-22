@@ -13,14 +13,22 @@ import (
 	"github.com/labstack/echo/v5"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/ditwrd/pavedway/internal/config"
 	"github.com/ditwrd/pavedway/internal/db"
 	"github.com/ditwrd/pavedway/internal/server"
 	"github.com/ditwrd/pavedway/internal/store"
 )
 
 // newTestServer spins up a fresh Postgres, runs migrations, and returns an
-// HTTP server backed by it.
+// HTTP server backed by it with auth disabled.
 func newTestServer(t *testing.T) *echo.Echo {
+	t.Helper()
+	return newTestServerCfg(t, config.Config{})
+}
+
+// newTestServerCfg is newTestServer with an explicit server config — auth
+// tests point cfg.OIDC at a fake IdP to exercise the full handshake.
+func newTestServerCfg(t *testing.T, cfg config.Config) *echo.Echo {
 	t.Helper()
 	ctx := context.Background()
 
@@ -54,16 +62,29 @@ func newTestServer(t *testing.T) *echo.Echo {
 		t.Fatalf("RunMigrations() error = %v, want nil", err)
 	}
 
-	return server.New(store.New(pool))
+	e, err := server.New(store.New(pool), cfg)
+	if err != nil {
+		t.Fatalf("server.New() error = %v, want nil", err)
+	}
+
+	return e
 }
 
 func doRequest(t *testing.T, e *echo.Echo, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return doRequestWithCookies(t, e, method, path, body)
+}
+
+func doRequestWithCookies(t *testing.T, e *echo.Echo, method, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 	var r io.Reader
 	if body != "" {
 		r = bytes.NewBufferString(body)
 	}
 	req := httptest.NewRequest(method, path, r)
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}

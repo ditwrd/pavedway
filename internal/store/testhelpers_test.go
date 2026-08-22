@@ -61,6 +61,26 @@ func bootstrap(t *testing.T, q *store.Queries, name string) store.Organization {
 	return org
 }
 
+// createEntity inserts a bare catalog entity (empty metadata/spec) and
+// returns the stored row.
+func createEntity(t *testing.T, q *store.Queries, orgID int64, kind, namespace, name string) store.Entity {
+	t.Helper()
+
+	ent, err := q.CreateEntity(context.Background(), store.CreateEntityParams{
+		OrgID:     orgID,
+		Kind:      kind,
+		Namespace: namespace,
+		Name:      name,
+		Metadata:  []byte("{}"),
+		Spec:      []byte("{}"),
+	})
+	if err != nil {
+		t.Fatalf("CreateEntity(%s %s/%s) error = %v, want nil", kind, namespace, name, err)
+	}
+
+	return ent
+}
+
 func mustMarshal(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)

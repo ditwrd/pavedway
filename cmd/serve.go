@@ -32,6 +32,15 @@ import (
 	"github.com/ditwrd/pavedway/internal/store"
 )
 
+// noArgs rejects positional arguments, tagged as a usage error (exit 2).
+func noArgs(cmd *cobra.Command, args []string) error {
+	if err := cobra.NoArgs(cmd, args); err != nil {
+		return &usageError{err}
+	}
+
+	return nil
+}
+
 // serveCmd boots the pavedway HTTP server: connects to Postgres, runs
 // pending migrations, then serves until the process is killed or the
 // config file changes on disk — a change triggers a graceful shutdown and
@@ -40,6 +49,7 @@ import (
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Run the pavedway HTTP server",
+	Args:  noArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Bind this command's own flags into the shared viper instance so
 		// --database-url/--port participate in viper's normal precedence
@@ -107,8 +117,13 @@ func runOnce(ctx context.Context, cfg config.Config, restart <-chan config.Confi
 		}
 	}()
 
+	srv, err := server.New(store.New(pool), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building server: %w", err)
+	}
+
 	sc := echo.StartConfig{Address: ":" + cfg.Port}
-	if err := sc.Start(runCtx, server.New(store.New(pool))); err != nil {
+	if err := sc.Start(runCtx, srv); err != nil {
 		return nil, err
 	}
 
@@ -123,6 +138,6 @@ func runOnce(ctx context.Context, cfg config.Config, restart <-chan config.Confi
 func init() {
 	rootCmd.AddCommand(serveCmd)
 
-	serveCmd.Flags().String("database-url", "", "Postgres connection string (env DATABASE_URL)")
-	serveCmd.Flags().String("port", "8080", "HTTP listen port (env PORT)")
+	serveCmd.Flags().String("database-url", "", "Postgres connection string (env PAVEDWAY_DATABASE_URL)")
+	serveCmd.Flags().String("port", "8080", "HTTP listen port (env PAVEDWAY_PORT)")
 }

@@ -26,6 +26,17 @@ type Organization struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type RefreshToken struct {
+	ID           int64              `json:"id"`
+	OrgID        int64              `json:"org_id"`
+	UserID       int64              `json:"user_id"`
+	Provider     string             `json:"provider"`
+	Subject      string             `json:"subject"`
+	RefreshToken string             `json:"refresh_token"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Relation struct {
 	ID              int64              `json:"id"`
 	OrgID           int64              `json:"org_id"`

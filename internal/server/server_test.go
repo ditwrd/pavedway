@@ -5,12 +5,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ditwrd/pavedway/internal/config"
 	"github.com/ditwrd/pavedway/internal/server"
 )
 
 // Ticket #21 (walking skeleton): the server must answer a health check.
 func TestHealthCheck(t *testing.T) {
-	e := server.New(nil)
+	e, err := server.New(nil, config.Config{})
+	if err != nil {
+		t.Fatalf("server.New() error = %v, want nil", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -24,7 +28,10 @@ func TestHealthCheck(t *testing.T) {
 // Ticket #21 AC3: the built frontend is embedded in the binary and served
 // from "/" — no separate frontend server/process.
 func TestServesEmbeddedFrontend(t *testing.T) {
-	e := server.New(nil)
+	e, err := server.New(nil, config.Config{})
+	if err != nil {
+		t.Fatalf("server.New() error = %v, want nil", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
