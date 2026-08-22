@@ -3,6 +3,7 @@ package cmd
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 
 	"github.com/ditwrd/pavedway/internal/config"
@@ -20,7 +21,5 @@ func TestServeAppGraph(t *testing.T) {
 		DatabaseURL: "postgres://localhost:5432/pavedway",
 		Port:        "8080",
 	}
-	if err := fx.ValidateApp(serveAppOptions(cfg, make(chan struct{}))); err != nil {
-		t.Fatalf("serve fx graph invalid: %v", err)
-	}
+	require.NoError(t, fx.ValidateApp(serveAppOptions(cfg, make(chan struct{}))), "serve fx graph invalid")
 }

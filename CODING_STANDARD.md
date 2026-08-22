@@ -25,6 +25,13 @@ distillation; the skill is the authority.
 - Test files are included in linting (`tests: true`) and follow the same
   rules, with one relaxation: test helpers may take more parameters when an
   options struct would obscure the test (see "Function Design").
+- Assertions use `stretchr/testify` in direct call form (`require.Equal(t,
+  ...)`, not `assert.New`/`require.New` objects). `require` for guards and
+  preconditions (everything that previously called `t.Fatalf`); `assert` for
+  non-fatal checks (previously `t.Errorf`). Error assertions
+  (`Error`/`NoError`/`ErrorIs`) always use `require` (testifylint
+  `require-error`), even mid-test. Expected value comes first:
+  `require.Equal(t, want, got)`.
 - Pre-commit verification: `go build ./... && go vet ./... && golangci-lint
   run ./... && go test ./...`.
 

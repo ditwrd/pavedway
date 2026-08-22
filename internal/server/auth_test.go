@@ -16,6 +16,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ditwrd/pavedway/internal/auth"
 	"github.com/ditwrd/pavedway/internal/config"
@@ -57,9 +59,7 @@ func newFakeIDP(t *testing.T) *fakeIDP {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate test key: %v", err)
-	}
+	require.NoError(t, err, "generate test key")
 
 	f := &fakeIDP{
 		key:       key,
@@ -286,33 +286,23 @@ func login(t *testing.T, e *echo.Echo, code string) *http.Cookie {
 	t.Helper()
 
 	rec := doRequest(t, e, http.MethodGet, "/api/v1/auth/login", "")
-	if rec.Code != http.StatusFound {
-		t.Fatalf("GET /auth/login = %d, want redirect", rec.Code)
-	}
+	require.Equal(t, http.StatusFound, rec.Code, "GET /auth/login")
 
 	loc, err := url.Parse(rec.Result().Header.Get("Location"))
-	if err != nil || loc.Query().Get("state") == "" {
-		t.Fatalf("login redirect Location = %q, want IdP URL with state", rec.Result().Header.Get("Location"))
-	}
+	require.True(t, err == nil && loc.Query().Get("state") != "", "login redirect Location = %q, want IdP URL with state", rec.Result().Header.Get("Location"))
 
 	stateCookie := findCookie(rec.Result().Cookies(), "pavedway_oidc_state")
 
 	pkceCookie := findCookie(rec.Result().Cookies(), "pavedway_oidc_pkce")
-	if stateCookie == nil || pkceCookie == nil {
-		t.Fatal("login did not set state and PKCE cookies")
-	}
+	require.True(t, stateCookie != nil && pkceCookie != nil, "login did not set state and PKCE cookies")
 
 	cb := doRequestWithCookies(t, e, http.MethodGet,
 		"/api/v1/auth/callback?code="+code+"&state="+loc.Query().Get("state"),
 		"", stateCookie, pkceCookie)
-	if cb.Code != http.StatusFound {
-		t.Fatalf("GET /auth/callback = %d, want redirect to app", cb.Code)
-	}
+	require.Equal(t, http.StatusFound, cb.Code, "GET /auth/callback")
 
 	sess := findCookie(cb.Result().Cookies(), auth.SessionCookie)
-	if sess == nil {
-		t.Fatal("callback did not set session cookie")
-	}
+	require.NotNil(t, sess, "callback did not set session cookie")
 
 	return sess
 }
@@ -347,13 +337,9 @@ func decodeSession(t *testing.T, token string) decodedSession {
 	parsed, err := jwt.ParseWithClaims(token, &claims,
 		func(*jwt.Token) (any, error) { return []byte(testSessionSecret), nil },
 		jwt.WithValidMethods([]string{"HS256"}))
-	if err != nil {
-		t.Fatalf("decoding session cookie: %v", err)
-	}
+	require.NoError(t, err, "decoding session cookie")
 
-	if !parsed.Valid {
-		t.Fatal("session cookie JWT invalid")
-	}
+	require.True(t, parsed.Valid, "session cookie JWT invalid")
 
 	return claims
 }
@@ -367,53 +353,39 @@ func TestOIDC_LoginCreatesUserAndMintsSession(t *testing.T) {
 	e := newTestServerCfg(t, authCfg(idp, 15*time.Minute))
 
 	// The org must exist before login (first-run bootstrap).
-	if rec := doRequest(t, e, http.MethodPost, "/api/v1/bootstrap", `{"name":"Acme Corp"}`); rec.Code != http.StatusCreated {
-		t.Fatalf("POST /bootstrap = %d, want 201", rec.Code)
-	}
+	rec := doRequest(t, e, http.MethodPost, "/api/v1/bootstrap", `{"name":"Acme Corp"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, "POST /bootstrap")
 
 	code, _ := idp.registerUser("sub-ada", "Ada@Example.COM")
 	sess := login(t, e, code)
 
-	if !sess.HttpOnly {
-		t.Error("session cookie is not HttpOnly")
-	}
+	assert.True(t, sess.HttpOnly, "session cookie is not HttpOnly")
 
-	if !sess.Secure {
-		t.Error("session cookie is not Secure")
-	}
+	assert.True(t, sess.Secure, "session cookie is not Secure")
 
 	claims := decodeSession(t, sess.Value)
-	if claims.Issuer != auth.Issuer {
-		t.Errorf("session issuer = %q, want pavedway (not the IdP token)", claims.Issuer)
-	}
+	assert.Equal(t, auth.Issuer, claims.Issuer, "session issuer (not the IdP token)")
 
-	if claims.UserID == 0 || claims.OrgID == 0 {
-		t.Errorf("session claims = %+v, want non-zero user_id/org_id", claims)
-	}
+	assert.True(t, claims.UserID != 0 && claims.OrgID != 0, "session claims = %+v, want non-zero user_id/org_id", claims)
 
-	if claims.Role == "" {
-		t.Error("session role claim is empty")
-	}
+	assert.NotEmpty(t, claims.Role, "session role claim is empty")
 
 	// The User entity exists in the catalog under the (lowercased) email,
 	// readable through the API with the session cookie.
-	rec := doRequestWithCookies(t, e, http.MethodGet,
+	rec = doRequestWithCookies(t, e, http.MethodGet,
 		"/api/v1/entities/User/default/ada@example.com", "", sess)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET User entity with session = %d, want 200 (body: %s)", rec.Code, rec.Body)
-	}
+	require.Equal(t, http.StatusOK, rec.Code, "GET User entity with session (body: %s)", rec.Body)
 
 	var got struct {
 		Kind string `json:"kind"`
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal entity response: %v", err)
-	}
 
-	if got.Kind != "User" || got.Name != "ada@example.com" {
-		t.Errorf("entity = %+v, want User/ada@example.com", got)
-	}
+	err := json.Unmarshal(rec.Body.Bytes(), &got)
+	require.NoError(t, err, "unmarshal entity response")
+
+	assert.Equal(t, "User", got.Kind, "entity")
+	assert.Equal(t, "ada@example.com", got.Name, "entity")
 }
 
 // Issue #23 AC2: a second login for the same identity resolves the existing
@@ -429,9 +401,7 @@ func TestOIDC_SecondLoginResolvesExistingUser(t *testing.T) {
 	first := decodeSession(t, login(t, e, code1).Value)
 	second := decodeSession(t, login(t, e, code2).Value)
 
-	if first.UserID != second.UserID {
-		t.Errorf("second login UserID = %d, want same as first %d (existing user must resolve)", second.UserID, first.UserID)
-	}
+	assert.Equal(t, first.UserID, second.UserID, "second login UserID (existing user must resolve)")
 }
 
 // Issue #23 AC2: an unverified email is not identity proof (OIDC Core
@@ -447,14 +417,10 @@ func TestOIDC_UnverifiedEmailFallsBackToSubject(t *testing.T) {
 	sess := login(t, e, code)
 
 	rec := doRequestWithCookies(t, e, http.MethodGet, "/api/v1/entities/User/default/sub-ada", "", sess)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET User entity by subject = %d, want 200 (body: %s)", rec.Code, rec.Body)
-	}
+	require.Equal(t, http.StatusOK, rec.Code, "GET User entity by subject (body: %s)", rec.Body)
 
 	rec = doRequestWithCookies(t, e, http.MethodGet, "/api/v1/entities/User/default/ada@example.com", "", sess)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("GET User entity by unverified email = %d, want 404", rec.Code)
-	}
+	require.Equal(t, http.StatusNotFound, rec.Code, "GET User entity by unverified email")
 }
 
 // Issue #23 AC4: an expired session JWT is transparently re-issued via the
@@ -476,51 +442,35 @@ func TestOIDC_RefreshReissuesExpiredSession(t *testing.T) {
 	// The protected request transparently re-issues the session in place.
 	rec := doRequestWithCookies(t, e, http.MethodGet,
 		"/api/v1/entities/User/default/ada@example.com", "", sess)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expired session GET = %d, want 200 (auto-refresh; body: %s)", rec.Code, rec.Body)
-	}
+	require.Equal(t, http.StatusOK, rec.Code, "expired session GET (auto-refresh; body: %s)", rec.Body)
 
 	auto := findCookie(rec.Result().Cookies(), auth.SessionCookie)
-	if auto == nil {
-		t.Fatal("auto-refresh did not set a new session cookie")
-	}
+	require.NotNil(t, auto, "auto-refresh did not set a new session cookie")
 
 	claims := decodeSession(t, auto.Value)
-	if !validSession(claims) {
-		t.Errorf("auto-refreshed session claims = %+v, want valid user with future expiry", claims)
-	}
+	assert.True(t, validSession(claims), "auto-refreshed session claims = %+v, want valid user with future expiry", claims)
 
 	// The explicit refresh endpoint still re-issues from the old expired
 	// cookie.
 	ref := doRequestWithCookies(t, e, http.MethodPost, "/api/v1/auth/refresh", "", sess)
-	if ref.Code != http.StatusOK {
-		t.Fatalf("POST /auth/refresh = %d, want 200 (body: %s)", ref.Code, ref.Body)
-	}
+	require.Equal(t, http.StatusOK, ref.Code, "POST /auth/refresh (body: %s)", ref.Body)
 
 	newSess := findCookie(ref.Result().Cookies(), auth.SessionCookie)
-	if newSess == nil {
-		t.Fatal("refresh did not set a new session cookie")
-	}
+	require.NotNil(t, newSess, "refresh did not set a new session cookie")
 
 	claims = decodeSession(t, newSess.Value)
-	if !validSession(claims) {
-		t.Errorf("refreshed session claims = %+v, want valid user with future expiry", claims)
-	}
+	assert.True(t, validSession(claims), "refreshed session claims = %+v, want valid user with future expiry", claims)
 
 	// The re-issued cookie works on the protected endpoint immediately.
 	rec2 := doRequestWithCookies(t, e, http.MethodGet,
 		"/api/v1/entities/User/default/ada@example.com", "", newSess)
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("GET after refresh = %d, want 200", rec2.Code)
-	}
+	require.Equal(t, http.StatusOK, rec2.Code, "GET after refresh")
 
 	idp.mu.Lock()
 	calls := idp.refreshCalls
 	idp.mu.Unlock()
 
-	if calls == 0 {
-		t.Error("refresh flow never reached the IdP token endpoint")
-	}
+	assert.NotZero(t, calls, "refresh flow never reached the IdP token endpoint")
 }
 
 // Issue #23 AC4 negative: when the provider no longer accepts the refresh
@@ -539,14 +489,10 @@ func TestOIDC_RefreshFailsWhenRefreshTokenInvalid(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	ref := doRequestWithCookies(t, e, http.MethodPost, "/api/v1/auth/refresh", "", sess)
-	if ref.Code != http.StatusUnauthorized {
-		t.Fatalf("POST /auth/refresh with revoked token = %d, want 401", ref.Code)
-	}
+	require.Equal(t, http.StatusUnauthorized, ref.Code, "POST /auth/refresh with revoked token")
 
 	cleared := findCookie(ref.Result().Cookies(), auth.SessionCookie)
-	if cleared == nil || cleared.MaxAge >= 0 {
-		t.Error("session cookie not cleared after failed refresh")
-	}
+	assert.True(t, cleared != nil && cleared.MaxAge < 0, "session cookie not cleared after failed refresh")
 }
 
 // Issue #23 AC4: OIDC Core §12.2 makes the id_token optional in refresh
@@ -568,19 +514,13 @@ func TestOIDC_RefreshSucceedsWithoutIDToken(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	ref := doRequestWithCookies(t, e, http.MethodPost, "/api/v1/auth/refresh", "", sess)
-	if ref.Code != http.StatusOK {
-		t.Fatalf("POST /auth/refresh without id_token = %d, want 200 (body: %s)", ref.Code, ref.Body)
-	}
+	require.Equal(t, http.StatusOK, ref.Code, "POST /auth/refresh without id_token (body: %s)", ref.Body)
 
 	newSess := findCookie(ref.Result().Cookies(), auth.SessionCookie)
-	if newSess == nil {
-		t.Fatal("refresh did not set a new session cookie")
-	}
+	require.NotNil(t, newSess, "refresh did not set a new session cookie")
 
 	claims := decodeSession(t, newSess.Value)
-	if !validSession(claims) {
-		t.Errorf("refreshed session claims = %+v, want valid user with future expiry", claims)
-	}
+	assert.True(t, validSession(claims), "refreshed session claims = %+v, want valid user with future expiry", claims)
 }
 
 // Issue #23 AC4: if the provider returns a different subject on refresh,
@@ -601,14 +541,10 @@ func TestOIDC_RefreshRejectsSubjectMismatch(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	ref := doRequestWithCookies(t, e, http.MethodPost, "/api/v1/auth/refresh", "", sess)
-	if ref.Code != http.StatusUnauthorized {
-		t.Fatalf("POST /auth/refresh with mismatched subject = %d, want 401", ref.Code)
-	}
+	require.Equal(t, http.StatusUnauthorized, ref.Code, "POST /auth/refresh with mismatched subject")
 
 	cleared := findCookie(ref.Result().Cookies(), auth.SessionCookie)
-	if cleared == nil || cleared.MaxAge >= 0 {
-		t.Error("session cookie not cleared after subject mismatch")
-	}
+	assert.True(t, cleared != nil && cleared.MaxAge < 0, "session cookie not cleared after subject mismatch")
 }
 
 // Issue #23 AC5: every catalog endpoint requires a valid session once OIDC
@@ -620,21 +556,15 @@ func TestOIDC_ProtectedEndpointsRejectNoSession(t *testing.T) {
 	doRequest(t, e, http.MethodPost, "/api/v1/bootstrap", `{"name":"Acme Corp"}`)
 
 	rec := doRequest(t, e, http.MethodGet, "/api/v1/entities/Component/default/foo", "")
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("GET entity without session = %d, want 401", rec.Code)
-	}
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "GET entity without session")
 
 	rec = doRequest(t, e, http.MethodPost, "/api/v1/entities",
 		`{"kind":"Component","namespace":"default","name":"foo","metadata":{},"spec":{}}`)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("POST entity without session = %d, want 401", rec.Code)
-	}
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "POST entity without session")
 
 	rec = doRequestWithCookies(t, e, http.MethodGet, "/api/v1/entities/Component/default/foo", "",
 		&http.Cookie{Name: auth.SessionCookie, Value: "not-a-jwt", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("GET entity with garbage cookie = %d, want 401", rec.Code)
-	}
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "GET entity with garbage cookie")
 }
 
 // Issue #23: the callback refuses a state mismatch — the CSRF guard against
@@ -652,13 +582,9 @@ func TestOIDC_CallbackRejectsWrongState(t *testing.T) {
 	cb := doRequestWithCookies(t, e, http.MethodGet,
 		"/api/v1/auth/callback?code="+code+"&state=attacker-chosen-state",
 		"", stateCookie, pkceCookie)
-	if cb.Code != http.StatusBadRequest {
-		t.Fatalf("callback with wrong state = %d, want 400", cb.Code)
-	}
+	require.Equal(t, http.StatusBadRequest, cb.Code, "callback with wrong state")
 
-	if findCookie(cb.Result().Cookies(), auth.SessionCookie) != nil {
-		t.Error("callback with wrong state set a session cookie")
-	}
+	assert.Nil(t, findCookie(cb.Result().Cookies(), auth.SessionCookie), "callback with wrong state set a session cookie")
 }
 
 // Issue #23: without OIDC configured the auth endpoints answer 503 and the
@@ -668,14 +594,10 @@ func TestOIDC_AuthEndpointsUnavailableWhenNotConfigured(t *testing.T) {
 	e := newTestServer(t)
 
 	rec := doRequest(t, e, http.MethodGet, "/api/v1/auth/login", "")
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("GET /auth/login without OIDC = %d, want 503", rec.Code)
-	}
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "GET /auth/login without OIDC")
 
 	rec = doRequest(t, e, http.MethodPost, "/api/v1/auth/refresh", "")
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("POST /auth/refresh without OIDC = %d, want 503", rec.Code)
-	}
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "POST /auth/refresh without OIDC")
 }
 
 // Issue #23: login before the first-run bootstrap has no org to attach the
@@ -691,18 +613,12 @@ func TestOIDC_LoginBeforeBootstrapRefused(t *testing.T) {
 	pkceCookie := findCookie(rec.Result().Cookies(), "pavedway_oidc_pkce")
 
 	loc, err := url.Parse(rec.Result().Header.Get("Location"))
-	if err != nil {
-		t.Fatalf("parse login redirect: %v", err)
-	}
+	require.NoError(t, err, "parse login redirect")
 
 	cb := doRequestWithCookies(t, e, http.MethodGet,
 		"/api/v1/auth/callback?code="+code+"&state="+loc.Query().Get("state"),
 		"", stateCookie, pkceCookie)
-	if cb.Code != http.StatusServiceUnavailable {
-		t.Fatalf("callback before bootstrap = %d, want 503 (body: %s)", cb.Code, cb.Body)
-	}
+	require.Equal(t, http.StatusServiceUnavailable, cb.Code, "callback before bootstrap (body: %s)", cb.Body)
 
-	if findCookie(cb.Result().Cookies(), auth.SessionCookie) != nil {
-		t.Error("callback before bootstrap set a session cookie")
-	}
+	assert.Nil(t, findCookie(cb.Result().Cookies(), auth.SessionCookie), "callback before bootstrap set a session cookie")
 }

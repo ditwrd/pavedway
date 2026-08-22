@@ -1,13 +1,15 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ditwrd/pavedway/internal/config"
 )
@@ -18,17 +20,13 @@ func TestWatch_MissingDatabaseURL(t *testing.T) {
 	t.Setenv("PAVEDWAY_DATABASE_URL", "")
 
 	_, err := config.Watch(viper.New(), "", nil)
-	if err == nil {
-		t.Fatal("Watch() error = nil, want error for missing PAVEDWAY_DATABASE_URL")
-	}
+	require.Error(t, err, "Watch() for missing PAVEDWAY_DATABASE_URL")
 }
 
 func writeConfigFile(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "pavedway.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatalf("writing config fixture: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600), "writing config fixture")
 	return path
 }
 
@@ -38,15 +36,9 @@ func TestWatch_ReadsConfigFile(t *testing.T) {
 	path := writeConfigFile(t, "database_url: postgres://file/db\nport: \"9090\"\n")
 
 	cfg, err := config.Watch(viper.New(), path, nil)
-	if err != nil {
-		t.Fatalf("Watch() error = %v, want nil", err)
-	}
-	if cfg.DatabaseURL != "postgres://file/db" {
-		t.Errorf("DatabaseURL = %q, want %q", cfg.DatabaseURL, "postgres://file/db")
-	}
-	if cfg.Port != "9090" {
-		t.Errorf("Port = %q, want %q", cfg.Port, "9090")
-	}
+	require.NoError(t, err, "Watch() error")
+	assert.Equal(t, "postgres://file/db", cfg.DatabaseURL, "DatabaseURL")
+	assert.Equal(t, "9090", cfg.Port, "Port")
 }
 
 // Viper's own precedence puts environment variables above config file
@@ -56,12 +48,8 @@ func TestWatch_EnvOverridesConfigFile(t *testing.T) {
 	path := writeConfigFile(t, "database_url: postgres://file/db\n")
 
 	cfg, err := config.Watch(viper.New(), path, nil)
-	if err != nil {
-		t.Fatalf("Watch() error = %v, want nil", err)
-	}
-	if cfg.DatabaseURL != "postgres://env/db" {
-		t.Errorf("DatabaseURL = %q, want env value %q", cfg.DatabaseURL, "postgres://env/db")
-	}
+	require.NoError(t, err, "Watch() error")
+	assert.Equal(t, "postgres://env/db", cfg.DatabaseURL, "DatabaseURL (env value)")
 }
 
 func TestWatch_ReloadsOnFileChange(t *testing.T) {
@@ -69,21 +57,16 @@ func TestWatch_ReloadsOnFileChange(t *testing.T) {
 	path := writeConfigFile(t, "database_url: postgres://file/db\nport: \"9090\"\n")
 
 	changed := make(chan config.Config, 1)
-	if _, err := config.Watch(viper.New(), path, func(cfg config.Config) { changed <- cfg }); err != nil {
-		t.Fatalf("Watch() error = %v, want nil", err)
-	}
+	_, err := config.Watch(viper.New(), path, func(cfg config.Config) { changed <- cfg })
+	require.NoError(t, err, "Watch() error")
 
-	if err := os.WriteFile(path, []byte("database_url: postgres://file/db\nport: \"9091\"\n"), 0o600); err != nil {
-		t.Fatalf("rewriting config fixture: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte("database_url: postgres://file/db\nport: \"9091\"\n"), 0o600), "rewriting config fixture")
 
 	select {
 	case cfg := <-changed:
-		if cfg.Port != "9091" {
-			t.Errorf("reloaded Port = %q, want %q", cfg.Port, "9091")
-		}
+		assert.Equal(t, "9091", cfg.Port, "reloaded Port")
 	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for config reload")
+		require.Fail(t, "timed out waiting for config reload")
 	}
 }
 
@@ -96,29 +79,22 @@ func TestWatch_DebouncesRapidWrites(t *testing.T) {
 	path := writeConfigFile(t, "database_url: postgres://file/db\nport: \"9090\"\n")
 
 	changed := make(chan config.Config, 4)
-	if _, err := config.Watch(viper.New(), path, func(cfg config.Config) { changed <- cfg }); err != nil {
-		t.Fatalf("Watch() error = %v, want nil", err)
-	}
+	_, err := config.Watch(viper.New(), path, func(cfg config.Config) { changed <- cfg })
+	require.NoError(t, err, "Watch() error")
 
-	if err := os.WriteFile(path, []byte("database_url: postgres://file/db\nport: \"9091\"\n"), 0o600); err != nil {
-		t.Fatalf("rewriting config fixture: %v", err)
-	}
-	if err := os.WriteFile(path, []byte("database_url: postgres://file/db\nport: \"9092\"\n"), 0o600); err != nil {
-		t.Fatalf("rewriting config fixture: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte("database_url: postgres://file/db\nport: \"9091\"\n"), 0o600), "rewriting config fixture")
+	require.NoError(t, os.WriteFile(path, []byte("database_url: postgres://file/db\nport: \"9092\"\n"), 0o600), "rewriting config fixture")
 
 	select {
 	case cfg := <-changed:
-		if cfg.Port != "9092" {
-			t.Errorf("reloaded Port = %q, want settled value %q", cfg.Port, "9092")
-		}
+		assert.Equal(t, "9092", cfg.Port, "reloaded Port (settled value)")
 	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for config reload")
+		require.Fail(t, "timed out waiting for config reload")
 	}
 
 	select {
 	case cfg := <-changed:
-		t.Fatalf("got a second reload delivery (Port = %q), want exactly one debounced callback", cfg.Port)
+		require.Fail(t, fmt.Sprintf("got a second reload delivery (Port = %q), want exactly one debounced callback", cfg.Port))
 	case <-time.After(300 * time.Millisecond):
 	}
 }
@@ -133,9 +109,7 @@ func TestWatch_OIDCIssuerRequiresFullConfig(t *testing.T) {
 	// PAVEDWAY_OIDC_CLIENT_SECRET / PAVEDWAY_OIDC_REDIRECT_URL / PAVEDWAY_SESSION_SECRET intentionally unset
 
 	_, err := config.Watch(viper.New(), "", nil)
-	if err == nil {
-		t.Fatal("Watch() error = nil, want error for incomplete OIDC config")
-	}
+	require.Error(t, err, "Watch() for incomplete OIDC config")
 }
 
 // Issue #23 AC1: a fully-configured provider is accepted, scopes default to
@@ -150,22 +124,14 @@ func TestWatch_OIDCConfigLoadsWithDefaults(t *testing.T) {
 	t.Setenv("PAVEDWAY_SESSION_SECRET", "random-signing-key")
 
 	cfg, err := config.Watch(viper.New(), "", nil)
-	if err != nil {
-		t.Fatalf("Watch() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "Watch() error")
 
-	if cfg.OIDC.Issuer != "https://idp.example.com" {
-		t.Errorf("OIDC.Issuer = %q, want configured issuer", cfg.OIDC.Issuer)
-	}
+	assert.Equal(t, "https://idp.example.com", cfg.OIDC.Issuer, "OIDC.Issuer (configured issuer)")
 
-	if cfg.Session.TTL != config.DefaultSessionTTL {
-		t.Errorf("Session.TTL = %v, want default %v", cfg.Session.TTL, config.DefaultSessionTTL)
-	}
+	assert.Equal(t, config.DefaultSessionTTL, cfg.Session.TTL, "Session.TTL (default)")
 
 	want := []string{"openid", "profile", "email", "offline_access"}
-	if !slices.Equal(cfg.OIDC.Scopes, want) {
-		t.Errorf("OIDC.Scopes = %v, want %v", cfg.OIDC.Scopes, want)
-	}
+	assert.Equal(t, want, cfg.OIDC.Scopes, "OIDC.Scopes")
 }
 
 // Issue #23: session TTL and OIDC scopes are operator-tunable via the
@@ -187,15 +153,8 @@ session:
 `)
 
 	cfg, err := config.Watch(viper.New(), path, nil)
-	if err != nil {
-		t.Fatalf("Watch() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "Watch() error")
 
-	if cfg.Session.TTL != 30*time.Minute {
-		t.Errorf("Session.TTL = %v, want 30m", cfg.Session.TTL)
-	}
-
-	if want := []string{"openid", "email"}; !slices.Equal(cfg.OIDC.Scopes, want) {
-		t.Errorf("OIDC.Scopes = %v, want %v", cfg.OIDC.Scopes, want)
-	}
+	assert.Equal(t, 30*time.Minute, cfg.Session.TTL, "Session.TTL")
+	assert.Equal(t, []string{"openid", "email"}, cfg.OIDC.Scopes, "OIDC.Scopes")
 }

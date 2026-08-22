@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/ditwrd/pavedway/internal/db"
@@ -24,9 +25,7 @@ func newTestQueries(t *testing.T) *store.Queries {
 		tcpostgres.WithPassword("pavedway"),
 		tcpostgres.BasicWaitStrategies(),
 	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
+	require.NoError(t, err, "start postgres container")
 	t.Cleanup(func() {
 		if err := container.Terminate(ctx); err != nil {
 			t.Logf("terminate container: %v", err)
@@ -34,19 +33,13 @@ func newTestQueries(t *testing.T) *store.Queries {
 	})
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
+	require.NoError(t, err, "connection string")
 
 	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
+	require.NoError(t, err, "open pool")
 	t.Cleanup(pool.Close)
 
-	if err := db.RunMigrations(pool); err != nil {
-		t.Fatalf("RunMigrations() error = %v, want nil", err)
-	}
+	require.NoError(t, db.RunMigrations(pool), "RunMigrations()")
 
 	return store.New(pool)
 }
@@ -55,9 +48,7 @@ func newTestQueries(t *testing.T) *store.Queries {
 func bootstrap(t *testing.T, q *store.Queries, name string) store.Organization {
 	t.Helper()
 	org, err := q.BootstrapOrganization(context.Background(), name)
-	if err != nil {
-		t.Fatalf("BootstrapOrganization(%q) error = %v, want nil", name, err)
-	}
+	require.NoError(t, err, "BootstrapOrganization(%q)", name)
 	return org
 }
 
@@ -74,9 +65,7 @@ func createEntity(t *testing.T, q *store.Queries, orgID int64, kind, namespace, 
 		Metadata:  []byte("{}"),
 		Spec:      []byte("{}"),
 	})
-	if err != nil {
-		t.Fatalf("CreateEntity(%q %q/%q) error = %v, want nil", kind, namespace, name, err)
-	}
+	require.NoError(t, err, "CreateEntity(%q %q/%q)", kind, namespace, name)
 
 	return ent
 }
@@ -84,15 +73,11 @@ func createEntity(t *testing.T, q *store.Queries, orgID int64, kind, namespace, 
 func mustMarshal(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
+	require.NoError(t, err, "json.Marshal")
 	return b
 }
 
 func mustUnmarshal(t *testing.T, b []byte, v any) {
 	t.Helper()
-	if err := json.Unmarshal(b, v); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
+	require.NoError(t, json.Unmarshal(b, v), "json.Unmarshal")
 }

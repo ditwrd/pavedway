@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ditwrd/pavedway/internal/store"
 )
 
@@ -24,22 +27,15 @@ func TestRefreshToken_UpsertGetUpdate(t *testing.T) {
 		Subject:      "sub-1",
 		RefreshToken: "refresh-token-1",
 	})
-	if err != nil {
-		t.Fatalf("UpsertRefreshToken() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "UpsertRefreshToken()")
 
-	if got.RefreshToken != "refresh-token-1" {
-		t.Errorf("RefreshToken = %q, want %q", got.RefreshToken, "refresh-token-1")
-	}
+	assert.Equal(t, "refresh-token-1", got.RefreshToken, "RefreshToken")
 
 	loaded, err := q.GetRefreshToken(ctx, store.GetRefreshTokenParams{OrgID: org.ID, UserID: user.ID})
-	if err != nil {
-		t.Fatalf("GetRefreshToken() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "GetRefreshToken()")
 
-	if loaded.Subject != "sub-1" || loaded.Provider != "https://idp.example.com" {
-		t.Errorf("GetRefreshToken() = %+v, want subject sub-1 from configured provider", loaded)
-	}
+	assert.Equal(t, "sub-1", loaded.Subject, "GetRefreshToken() subject (want from configured provider)")
+	assert.Equal(t, "https://idp.example.com", loaded.Provider, "GetRefreshToken() provider")
 
 	// A second login rotates the stored token rather than adding a row.
 	updated, err := q.UpsertRefreshToken(ctx, store.UpsertRefreshTokenParams{
@@ -49,17 +45,11 @@ func TestRefreshToken_UpsertGetUpdate(t *testing.T) {
 		Subject:      "sub-1",
 		RefreshToken: "refresh-token-2",
 	})
-	if err != nil {
-		t.Fatalf("UpsertRefreshToken() (update) error = %v, want nil", err)
-	}
+	require.NoError(t, err, "UpsertRefreshToken() (update)")
 
-	if updated.ID != got.ID {
-		t.Errorf("updated.ID = %d, want same row %d (upsert must not duplicate)", updated.ID, got.ID)
-	}
+	assert.Equal(t, got.ID, updated.ID, "updated.ID (upsert must not duplicate)")
 
-	if updated.RefreshToken != "refresh-token-2" {
-		t.Errorf("RefreshToken = %q, want rotated %q", updated.RefreshToken, "refresh-token-2")
-	}
+	assert.Equal(t, "refresh-token-2", updated.RefreshToken, "RefreshToken (want rotated)")
 }
 
 // Issue #23 logout: deleting the refresh token kills the session's ability
@@ -71,22 +61,16 @@ func TestRefreshToken_Delete(t *testing.T) {
 	org := bootstrap(t, q, "acme")
 	user := createEntity(t, q, org.ID, "User", "default", "ada@example.com")
 
-	if _, err := q.UpsertRefreshToken(ctx, store.UpsertRefreshTokenParams{
+	_, err := q.UpsertRefreshToken(ctx, store.UpsertRefreshTokenParams{
 		OrgID: org.ID, UserID: user.ID, Provider: "p", Subject: "s", RefreshToken: "rt",
-	}); err != nil {
-		t.Fatalf("UpsertRefreshToken() error = %v, want nil", err)
-	}
+	})
+	require.NoError(t, err, "UpsertRefreshToken()")
 
 	rows, err := q.DeleteRefreshToken(ctx, store.DeleteRefreshTokenParams{OrgID: org.ID, UserID: user.ID})
-	if err != nil {
-		t.Fatalf("DeleteRefreshToken() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "DeleteRefreshToken()")
 
-	if rows != 1 {
-		t.Errorf("DeleteRefreshToken() rows = %d, want 1", rows)
-	}
+	assert.Equal(t, int64(1), rows, "DeleteRefreshToken() rows")
 
-	if _, err := q.GetRefreshToken(ctx, store.GetRefreshTokenParams{OrgID: org.ID, UserID: user.ID}); err == nil {
-		t.Error("GetRefreshToken() error = nil after delete, want no rows")
-	}
+	_, err = q.GetRefreshToken(ctx, store.GetRefreshTokenParams{OrgID: org.ID, UserID: user.ID})
+	assert.Error(t, err, "GetRefreshToken() after delete (want no rows)")
 }

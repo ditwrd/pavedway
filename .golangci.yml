@@ -124,6 +124,7 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 4
+      ignore-tests: true # test-data literals are idiomatic, not constants
     gocyclo:
       min-complexity: 13 # strict; lower => stricter
     nolintlint:

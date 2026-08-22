@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ditwrd/pavedway/internal/auth"
 )
@@ -18,18 +20,12 @@ func TestSessions_MintParseRoundTrip(t *testing.T) {
 	s := auth.NewSessions("test-secret", 15*time.Minute)
 
 	token, err := s.Mint(auth.Session{UserID: 42, OrgID: 7, Role: auth.DefaultRole})
-	if err != nil {
-		t.Fatalf("Mint() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "Mint() error")
 
 	got, err := s.Parse(token, false)
-	if err != nil {
-		t.Fatalf("Parse() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "Parse() error")
 
-	if got.UserID != 42 || got.OrgID != 7 || got.Role != auth.DefaultRole {
-		t.Errorf("Parse() = %+v, want user 42 in org 7 with role %q", got, auth.DefaultRole)
-	}
+	assert.Equal(t, auth.Session{UserID: 42, OrgID: 7, Role: auth.DefaultRole}, got, "Parse()")
 }
 
 // Issue #23: an expired session token is rejected by the normal path but
@@ -41,24 +37,17 @@ func TestSessions_ExpiredToken_RejectedButRefreshable(t *testing.T) {
 	s := auth.NewSessions("test-secret", 1*time.Nanosecond)
 
 	token, err := s.Mint(auth.Session{UserID: 42, OrgID: 7, Role: auth.DefaultRole})
-	if err != nil {
-		t.Fatalf("Mint() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "Mint() error")
 
 	time.Sleep(2 * time.Millisecond)
 
-	if _, err := s.Parse(token, false); err == nil {
-		t.Error("Parse() error = nil on expired token, want expiry rejection")
-	}
+	_, err = s.Parse(token, false)
+	require.Error(t, err, "Parse() on expired token")
 
 	got, err := s.Parse(token, true)
-	if err != nil {
-		t.Fatalf("Parse(allowExpired) error = %v, want nil", err)
-	}
+	require.NoError(t, err, "Parse(allowExpired) error")
 
-	if got.UserID != 42 {
-		t.Errorf("Parse(allowExpired).UserID = %d, want 42", got.UserID)
-	}
+	assert.Equal(t, int64(42), got.UserID, "Parse(allowExpired).UserID")
 }
 
 // Issue #23: the signing secret is the session's integrity boundary — a
@@ -70,27 +59,21 @@ func TestSessions_TamperedOrWrongSecret_Rejected(t *testing.T) {
 	other := auth.NewSessions("secret-b", 15*time.Minute)
 
 	token, err := issuer.Mint(auth.Session{UserID: 42, OrgID: 7, Role: auth.DefaultRole})
-	if err != nil {
-		t.Fatalf("Mint() error = %v, want nil", err)
-	}
+	require.NoError(t, err, "Mint() error")
 
-	if _, err := other.Parse(token, false); err == nil {
-		t.Error("Parse() with wrong secret: error = nil, want signature rejection")
-	}
+	_, err = other.Parse(token, false)
+	require.Error(t, err, "Parse() with wrong secret")
 
 	// Flip a payload byte — signature no longer matches.
 	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		t.Fatalf("token has %d segments, want 3", len(parts))
-	}
+	require.Len(t, parts, 3, "token segments")
 
 	payload := []byte(parts[1])
 	payload[0] = 'A' + (payload[0]-'A'+1)%26
 
 	parts[1] = string(payload)
-	if _, err := issuer.Parse(strings.Join(parts, "."), false); err == nil {
-		t.Error("Parse() on tampered token: error = nil, want signature rejection")
-	}
+	_, err = issuer.Parse(strings.Join(parts, "."), false)
+	assert.Error(t, err, "Parse() on tampered token")
 }
 
 // Issue #23: a token minted by some other issuer (e.g. the upstream OIDC
@@ -106,15 +89,11 @@ func TestSessions_ForeignIssuer_Rejected(t *testing.T) {
 		"exp": time.Now().Add(time.Hour).Unix(),
 		"sub": "42",
 	}).SignedString([]byte("test-secret"))
-	if err != nil {
-		t.Fatalf("signing foreign token: %v", err)
-	}
+	require.NoError(t, err, "signing foreign token")
 
-	if _, err := s.Parse(foreign, false); err == nil {
-		t.Error("Parse() on foreign-issuer token: error = nil, want rejection")
-	}
+	_, err = s.Parse(foreign, false)
+	require.Error(t, err, "Parse() on foreign-issuer token")
 
-	if _, err := s.Parse(foreign, true); err == nil {
-		t.Error("Parse(allowExpired) on foreign-issuer token: error = nil, want rejection")
-	}
+	_, err = s.Parse(foreign, true)
+	assert.Error(t, err, "Parse(allowExpired) on foreign-issuer token")
 }
