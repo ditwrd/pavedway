@@ -12,21 +12,26 @@ import (
 //go:embed migrations/*.sql
 var embedMigration embed.FS
 
-func RunMigrations(pool *pgxpool.Pool) error {
+// init configures goose's package-level state exactly once per process.
+// goose keeps the migration FS and dialect store in unsynchronized globals
+// (SetBaseFS/SetDialect are plain assignments); configuring them per call
+// races when concurrent callers migrate — parallel tests each booting their
+// own Postgres tripped this under -race. Setting them at package load makes
+// every runtime migration a read-only use of the globals.
+func init() {
 	goose.SetBaseFS(embedMigration)
 
-	err := goose.SetDialect("postgres")
-	if err != nil {
-		return err
+	if err := goose.SetDialect("postgres"); err != nil {
+		panic(err)
 	}
+}
 
+// RunMigrations applies all pending schema migrations to the pool's
+// database. goose's dialect and migration FS are configured once at package
+// load; this call only reads them, so concurrent callers are safe.
+func RunMigrations(pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)
 	defer db.Close()
 
-	err = goose.Up(db, "migrations")
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return goose.Up(db, "migrations")
 }
