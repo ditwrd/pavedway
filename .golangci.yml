@@ -13,7 +13,7 @@ issues:
   # (the #23 work). Untouched pre-existing code is exempt — reformatting the
   # whole legacy tree is out of scope. Bump the rev to widen the gate once
   # older debt is cleaned up.
-  new-from-rev: HEAD
+  new-from-rev: origin/main
 
 linters:
   enable:

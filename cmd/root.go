@@ -62,8 +62,7 @@ func Execute() {
 		return
 	}
 
-	var ue *usageError
-	if errors.As(err, &ue) {
+	if ue, ok := errors.AsType[*usageError](err); ok {
 		fmt.Fprintln(os.Stderr, "Error:", ue.err)
 		fmt.Fprintln(os.Stderr, "Run 'pavedway --help' for usage.")
 		os.Exit(2)

@@ -67,15 +67,13 @@ type sessionClaims struct {
 func (s *Sessions) Mint(sess Session) (string, error) {
 	now := time.Now()
 	claims := sessionClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    Issuer,
-			Subject:   strconv.FormatInt(sess.UserID, 10),
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
-		},
-		UserID: sess.UserID,
-		OrgID:  sess.OrgID,
-		Role:   sess.Role,
+		Issuer:    Issuer,
+		Subject:   strconv.FormatInt(sess.UserID, 10),
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
+		UserID:    sess.UserID,
+		OrgID:     sess.OrgID,
+		Role:      sess.Role,
 	}
 
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)

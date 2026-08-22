@@ -52,6 +52,9 @@ jobs:
         working-directory: frontend
       - uses: golangci/golangci-lint-action@v9
         with:
+          # Pin to the version installed locally (v2.13.1) so CI and local
+          # lint agree; 'latest' drifts and flags code local never sees.
+          version: v2.13.1
           # The repo config gates on new-from-rev: HEAD for local dev; in CI
           # the gate is issues introduced by this PR vs its base branch.
           args: --new-from-rev=origin/main

@@ -133,12 +133,18 @@ func (f *fakeIDP) handleDiscovery(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (f *fakeIDP) handleJWKS(w http.ResponseWriter, _ *http.Request) {
-	pub := f.key.PublicKey
+	// Uncompressed SEC1 point: 0x04 || X(32) || Y(32) for P-256.
+	point, err := f.key.PublicKey.Bytes()
+	if err != nil {
+		http.Error(w, "public key bytes", http.StatusInternalServerError)
+		return
+	}
+
 	writeJSON(w, map[string]any{
 		"keys": []map[string]any{{
 			"kty": "EC", "crv": "P-256", "kid": "test-key", "use": "sig", "alg": "ES256",
-			"x": base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
-			"y": base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
+			"x": base64.RawURLEncoding.EncodeToString(point[1:33]),
+			"y": base64.RawURLEncoding.EncodeToString(point[33:]),
 		}},
 	})
 }
