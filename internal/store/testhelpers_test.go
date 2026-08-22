@@ -75,7 +75,7 @@ func createEntity(t *testing.T, q *store.Queries, orgID int64, kind, namespace, 
 		Spec:      []byte("{}"),
 	})
 	if err != nil {
-		t.Fatalf("CreateEntity(%s %s/%s) error = %v, want nil", kind, namespace, name, err)
+		t.Fatalf("CreateEntity(%q %q/%q) error = %v, want nil", kind, namespace, name, err)
 	}
 
 	return ent

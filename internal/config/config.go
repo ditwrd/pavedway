@@ -1,3 +1,5 @@
+// Package config loads and validates pavedway configuration from flags,
+// environment, and files, and hot-reloads it on change.
 package config
 
 import (
@@ -151,26 +153,28 @@ func build(v *viper.Viper) (Config, error) {
 	// (dev-mode stance). Once an issuer is configured, every credential
 	// needed to complete the handshake must be present — a half-configured
 	// IdP is a silent auth bypass, so refuse to boot.
-	if cfg.OIDC.Issuer != "" {
-		var missing []string
+	if cfg.OIDC.Issuer == "" {
+		return cfg, nil
+	}
 
-		for _, f := range []struct {
-			name  string
-			value string
-		}{
-			{"oidc.client_id", cfg.OIDC.ClientID},
-			{"oidc.client_secret", cfg.OIDC.ClientSecret},
-			{"oidc.redirect_url", cfg.OIDC.RedirectURL},
-			{"session.secret", cfg.Session.Secret},
-		} {
-			if f.value == "" {
-				missing = append(missing, f.name)
-			}
-		}
+	var missing []string
 
-		if len(missing) > 0 {
-			return Config{}, fmt.Errorf("OIDC issuer configured but missing: %s", strings.Join(missing, ", "))
+	for _, f := range []struct {
+		name  string
+		value string
+	}{
+		{"oidc.client_id", cfg.OIDC.ClientID},
+		{"oidc.client_secret", cfg.OIDC.ClientSecret},
+		{"oidc.redirect_url", cfg.OIDC.RedirectURL},
+		{"session.secret", cfg.Session.Secret},
+	} {
+		if f.value == "" {
+			missing = append(missing, f.name)
 		}
+	}
+
+	if len(missing) > 0 {
+		return Config{}, fmt.Errorf("OIDC issuer configured but missing: %s", strings.Join(missing, ", "))
 	}
 
 	return cfg, nil

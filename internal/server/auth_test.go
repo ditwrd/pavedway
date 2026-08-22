@@ -321,6 +321,11 @@ func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
 	return nil
 }
 
+// validSession reports whether decoded claims describe a live session.
+func validSession(claims decodedSession) bool {
+	return claims.UserID != 0 && claims.ExpiresAt != nil && claims.ExpiresAt.After(time.Now())
+}
+
 type decodedSession struct {
 	jwt.RegisteredClaims
 	UserID int64  `json:"user_id"`
@@ -475,7 +480,7 @@ func TestOIDC_RefreshReissuesExpiredSession(t *testing.T) {
 	}
 
 	claims := decodeSession(t, auto.Value)
-	if claims.UserID == 0 || claims.ExpiresAt == nil || claims.ExpiresAt.Before(time.Now()) {
+	if !validSession(claims) {
 		t.Errorf("auto-refreshed session claims = %+v, want valid user with future expiry", claims)
 	}
 
@@ -492,7 +497,7 @@ func TestOIDC_RefreshReissuesExpiredSession(t *testing.T) {
 	}
 
 	claims = decodeSession(t, newSess.Value)
-	if claims.UserID == 0 || claims.ExpiresAt == nil || claims.ExpiresAt.Before(time.Now()) {
+	if !validSession(claims) {
 		t.Errorf("refreshed session claims = %+v, want valid user with future expiry", claims)
 	}
 
@@ -567,7 +572,7 @@ func TestOIDC_RefreshSucceedsWithoutIDToken(t *testing.T) {
 	}
 
 	claims := decodeSession(t, newSess.Value)
-	if claims.UserID == 0 || claims.ExpiresAt == nil || claims.ExpiresAt.Before(time.Now()) {
+	if !validSession(claims) {
 		t.Errorf("refreshed session claims = %+v, want valid user with future expiry", claims)
 	}
 }

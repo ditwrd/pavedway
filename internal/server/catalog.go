@@ -6,24 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/ditwrd/pavedway/internal/auth"
 	"github.com/ditwrd/pavedway/internal/store"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
-	"golang.org/x/oauth2"
 )
-
-type handlers struct {
-	q *store.Queries
-
-	// auth state; nil when OIDC is not configured (auth disabled).
-	provider  *oidc.Provider
-	oauth2Cfg *oauth2.Config
-	verifier  *oidc.IDTokenVerifier
-	sessions  *auth.Sessions
-	issuer    string
-}
 
 // errorResponse returns a generic client-facing error and logs the raw
 // cause server-side. Internal errors — DB failures, oauth2 exchanges,

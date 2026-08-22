@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -84,7 +84,9 @@ func oidcHandshake(c *echo.Context) (pkce, code string, err error) {
 	state := c.QueryParam("state")
 
 	stateCookieVal, err := c.Cookie(stateCookie)
-	if err != nil || stateCookieVal.Value == "" || stateCookieVal.Value != state {
+	stateValid := err == nil && stateCookieVal.Value != "" && stateCookieVal.Value == state
+
+	if !stateValid {
 		return "", "", errors.New("invalid state")
 	}
 
@@ -283,7 +285,7 @@ func (h *handlers) refresh(c *echo.Context) error {
 func (h *handlers) refreshSession(ctx context.Context, sess auth.Session) (string, error) {
 	rt, err := h.q.GetRefreshToken(ctx, store.GetRefreshTokenParams{OrgID: sess.OrgID, UserID: sess.UserID})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("loading refresh token: %w", err)
 	}
 
 	newToken, err := h.oauth2Cfg.TokenSource(ctx, &oauth2.Token{RefreshToken: rt.RefreshToken}).Token()
@@ -291,10 +293,10 @@ func (h *handlers) refreshSession(ctx context.Context, sess auth.Session) (strin
 		// The provider refused the refresh token (revoked/expired): the
 		// session is dead — drop the stored token and force re-login.
 		if _, delErr := h.q.DeleteRefreshToken(ctx, store.DeleteRefreshTokenParams{OrgID: sess.OrgID, UserID: sess.UserID}); delErr != nil {
-			log.Printf("refresh: drop stale refresh token for org=%d user=%d: %v", sess.OrgID, sess.UserID, delErr)
+			slog.Error("refresh: drop stale refresh token", "org_id", sess.OrgID, "user_id", sess.UserID, "err", delErr)
 		}
 
-		return "", err
+		return "", fmt.Errorf("refreshing OIDC token: %w", err)
 	}
 
 	// Verify the refreshed ID token too — the oauth2 client only checks the
@@ -330,11 +332,17 @@ func (h *handlers) refreshSession(ctx context.Context, sess auth.Session) (strin
 func (h *handlers) logout(c *echo.Context) error {
 	ctx := c.Request().Context()
 
-	if cookie, err := c.Cookie(auth.SessionCookie); err == nil {
-		if sess, err := h.sessions.Parse(cookie.Value, true); err == nil {
-			if _, delErr := h.q.DeleteRefreshToken(ctx, store.DeleteRefreshTokenParams{OrgID: sess.OrgID, UserID: sess.UserID}); delErr != nil {
-				log.Printf("logout: drop refresh token for org=%d user=%d: %v", sess.OrgID, sess.UserID, delErr)
-			}
+	cookie, err := c.Cookie(auth.SessionCookie)
+	if err != nil {
+		clearSessionCookie(c)
+		return c.NoContent(http.StatusNoContent)
+	}
+
+	// Best-effort cleanup: a forged or expired session cookie is dropped
+	// silently — logout still clears the cookie and returns 204.
+	if sess, parseErr := h.sessions.Parse(cookie.Value, true); parseErr == nil {
+		if _, delErr := h.q.DeleteRefreshToken(ctx, store.DeleteRefreshTokenParams{OrgID: sess.OrgID, UserID: sess.UserID}); delErr != nil {
+			slog.Error("logout: drop refresh token", "org_id", sess.OrgID, "user_id", sess.UserID, "err", delErr)
 		}
 	}
 
@@ -364,7 +372,7 @@ func (h *handlers) requireAuth(next echo.HandlerFunc) echo.HandlerFunc {
 		// refresh candidate) from a forged/garbage one (reject outright).
 		expired, parseErr := h.sessions.Parse(cookie.Value, true)
 		if parseErr != nil {
-			return c.JSON(http.StatusUnauthorized, errorResponse(err))
+			return c.JSON(http.StatusUnauthorized, errorResponse(parseErr))
 		}
 
 		sessionToken, refreshErr := h.refreshSession(c.Request().Context(), expired)

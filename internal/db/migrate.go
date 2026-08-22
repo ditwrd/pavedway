@@ -1,3 +1,4 @@
+// Package db applies and verifies the pavedway schema migrations.
 package db
 
 import (

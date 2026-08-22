@@ -28,10 +28,10 @@ func TestCreateEntity_AllKinds_CarryOrgID(t *testing.T) {
 			Spec:      mustMarshal(t, map[string]any{}),
 		})
 		if err != nil {
-			t.Fatalf("CreateEntity(%s) error = %v, want nil", kind, err)
+			t.Fatalf("CreateEntity(%q) error = %v, want nil", kind, err)
 		}
 		if e.OrgID != org.ID {
-			t.Fatalf("CreateEntity(%s).OrgID = %d, want %d (row must carry the bootstrapped org_id)", kind, e.OrgID, org.ID)
+			t.Fatalf("CreateEntity(%q).OrgID = %d, want %d (row must carry the bootstrapped org_id)", kind, e.OrgID, org.ID)
 		}
 	}
 }

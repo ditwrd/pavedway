@@ -18,6 +18,17 @@ import (
 	"golang.org/x/oauth2"
 )
 
+type handlers struct {
+	q *store.Queries
+
+	// auth state; nil when OIDC is not configured (auth disabled).
+	provider  *oidc.Provider
+	oauth2Cfg *oauth2.Config
+	verifier  *oidc.IDTokenVerifier
+	sessions  *auth.Sessions
+	issuer    string
+}
+
 // New builds the pavedway HTTP server. When cfg configures an OIDC issuer,
 // the server performs provider discovery at boot (failing fast on a bad or
 // unreachable IdP) and protects the catalog API with the session
